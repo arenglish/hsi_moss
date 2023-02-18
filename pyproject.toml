@@ -11,6 +11,9 @@ authors = [
 description = "Hyperspectral image processing pipeline for moss sample images"
 readme = "README.md"
 requires-python = ">=3.7"
+dependencies = [
+  'tifffile',
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
