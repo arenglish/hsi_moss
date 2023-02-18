@@ -1,8 +1,8 @@
 from pathlib import Path, PurePath
 from typing import SupportsInt, AnyStr
 # importing PIL
-from spectral_envi import *
-from spectral_tiffs import write_stiff
+from hsi_moss.spectral_envi import *
+from hsi_moss.spectral_tiffs import write_stiff
  
 
 def open_image(path: PurePath):
