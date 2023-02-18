@@ -38,9 +38,11 @@ def read_envi(headerFileName, rawFileExt='.raw'):
     f = open(headerFileName, 'r')
     header = f.readlines()
     f.close()
-
+    dataType = None
     for line in header:
         line = line.lower().strip()
+        if 'data type' in line:
+            dataType = int(line.split('data type = ')[1])
         if 'samples' in line:
             samples = int(line.split('samples = ')[1])
         if 'bands' in line and 'default' not in line:
@@ -68,10 +70,9 @@ def read_envi(headerFileName, rawFileExt='.raw'):
     wavelengths = [float(n) for n in wavelengths.split(',')]
     wavelengths = np.array(wavelengths)
 
-    if byteorder == 0:  # Specim
-        dataType = np.dtype('<u2')
-    if byteorder == 1:  # Senop
-        dataType = np.dtype('>u2')
+    if dataType is not None:
+        if dataType == 12:
+            dataType = numpy.dtype('uint16')
 
     # Read raw data file:
     f = open(fileName + rawFileExt, 'r')
@@ -88,7 +89,5 @@ def read_envi(headerFileName, rawFileExt='.raw'):
         dataCube = raw_data.reshape((bands, lines, samples))
         dataCube = dataCube.swapaxes(0, 1)
         dataCube = dataCube.swapaxes(1, 2)
-
-    dataCube = dataCube.astype('float')
 
     return dataCube, wavelengths
