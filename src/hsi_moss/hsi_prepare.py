@@ -1,7 +1,6 @@
 from pathlib import Path, PurePath
 from typing import SupportsInt, AnyStr
 # importing PIL
-from PIL import Image
 from spectral_envi import *
 from spectral_tiffs import write_stiff
  
