@@ -1,0 +1,44 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["-Xfrozen_modules=off"],
+            "justMyCode": false
+        },
+        {
+            "name": "hsi_moss.demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/demo.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "white correct",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/process_refs.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Mask",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/mask-gen.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}

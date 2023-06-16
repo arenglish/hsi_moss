@@ -4,5 +4,5 @@ This is an in-progress pipeline for processing hyperspectral images of moss samp
 
 ```
 python -m build
-python -m twine upload --repository hsi_moss dist/*
+python -m twine upload dist/*
 ```

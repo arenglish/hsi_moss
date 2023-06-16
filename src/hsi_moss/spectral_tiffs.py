@@ -1,3 +1,4 @@
+# type: ignore
 # Copyright © 2020 University of Eastern Finland
 #
 # Permission is hereby granted, free of charge, to any person obtaining
@@ -89,6 +90,9 @@ def read_stiff(filename: str, silent=False, rgb_only=False):
     TIFFTAG_WAVELENGTHS = 65000
     TIFFTAG_METADATA = 65111
     spim = None
+    spim_shape = None
+    extras = {}
+    first_extras_page = None
     wavelengths = None
     rgb = None
     metadata = None
@@ -117,57 +121,84 @@ def read_stiff(filename: str, silent=False, rgb_only=False):
                     multiple_wavelength_lists = True
                 elif wavelengths != tag_value:
                     # Well, the image is just broken then?
-                    raise RuntimeError(f'Spectral-Tiff "{filename}" contains multiple differing wavelength lists!')
+                    raise RuntimeError(
+                        f'Spectral-Tiff "{filename}" contains multiple differing wavelength lists!'
+                    )
+
+            if (
+                first_extras_page is None
+                and tiff.pages[band_page].shape != tiff.pages[first_band_page].shape
+            ):
+                first_extras_page = band_page
 
             # The metadata string, like the wavelength list, is supposed to be
             # on the first band image. The older write_tiff wrote it on all
             # pages, too. Make a note of it.
             tag = tiff.pages[band_page].tags.get(TIFFTAG_METADATA)
-            tag_value = tag.value if tag else ''
-            if tag_value:
-                if metadata is None:
-                    metadata = tag_value
-                elif metadata == tag_value:
-                    multiple_metadata_fields = True
-                elif metadata != tag_value:
-                    # Well, for some reason there are multiple metadata fields
-                    # with varying content. This version of the function does
-                    # not care for such fancyness.
-                    raise RuntimeError(f'Spectral-Tiff "{filename}" contains multiple differing metadata fields!')
+            tag_value = tag.value if tag else ""
+            if tag_value and band_page == first_band_page:
+                metadata = tag_value
 
         # The metadata is stored in an ASCII string. It may contain back-slashed
         # hex sequences (unicode codepoints presented as ASCII text). Convert
         # ASCII string back to bytes and decode as unicode sequence.
         if metadata:
-            metadata = metadata.encode('ascii').decode('unicode-escape')
+            metadata = metadata.encode("ascii").decode("unicode-escape")
         else:
-            metadata = ''
+            metadata = ""
 
         # Some of the early images may have errorneus metadata string.
         # Attempt to fix it:
-        if metadata[0] == "'" and metadata[-1] == "'":
+        if len(metadata) > 0 and metadata[0] == "'" and metadata[-1] == "'":
             while metadata[0] == "'":
                 metadata = metadata[1:]
             while metadata[-1] == "'":
                 metadata = metadata[:-1]
-            if '\\n' in metadata:
-                metadata = metadata.replace('\\n', '\n')
+            if "\\n" in metadata:
+                metadata = metadata.replace("\\n", "\n")
 
         # Generate a fake wavelength list, if the spectral tiff has managed to
         # lose its own wavelength list.
         if not wavelengths:
-            wavelengths = range(0, len(tiff.pages) - 1 if rgb is not None else len(tiff.pages))
+            wavelengths = range(
+                0, len(tiff.pages) - 1 if rgb is not None else len(tiff.pages)
+            )
 
         if multiple_wavelength_lists and not silent:
-            warnings.warn(f'Spectral-Tiff "{filename}" contains duplicated wavelength lists!')
+            warnings.warn(
+                f'Spectral-Tiff "{filename}" contains duplicated wavelength lists!'
+            )
         if multiple_metadata_fields and not silent:
-            warnings.warn(f'Spectral-Tiff "{filename}" contains duplicated metadata fields!')
+            warnings.warn(
+                f'Spectral-Tiff "{filename}" contains duplicated metadata fields!'
+            )
 
         if not rgb_only:
-            spim = tiff.asarray(key=range(first_band_page, len(tiff.pages)))
+            spim = tiff.asarray(
+                key=range(
+                    first_band_page,
+                    len(tiff.pages) if first_extras_page is None else first_extras_page,
+                )
+            )
+            extras = (
+                {}
+                if first_extras_page is None
+                else dict(
+                    [
+                        (
+                            tiff.pages[n].tags.get(TIFFTAG_METADATA).value,
+                            tiff.asarray(key=n),
+                        )
+                        for n in range(first_extras_page, len(tiff.pages))
+                    ]
+                )
+            )
+            if len(spim.shape) == 2:
+                spim = spim[np.newaxis, :, :]
             spim = np.transpose(spim, (1, 2, 0))
         else:
             spim = None
+            extras = {}
 
         # Make sure the wavelengths are in an ascending order:
         if wavelengths[0] > wavelengths[-1]:
@@ -175,13 +206,22 @@ def read_stiff(filename: str, silent=False, rgb_only=False):
             wavelengths = wavelengths[::-1]
 
     # Convert uint16 cube back to float32 cube
-    if spim is not None and spim.dtype == 'uint16':
-        spim = spim.astype('float32') / (2**16 - 1)
+    # if spim is not None and spim.dtype == "uint16":
+    #     spim = spim.astype("float32") / (2**16 - 1)
 
-    return spim, np.array(wavelengths), rgb, metadata
+    return spim, extras, np.array(wavelengths), rgb, metadata
 
 
-def write_stiff(filename: str, spim, wls, rgb: Optional[Any], metadata: str = ''):
+def write_stiff(
+    filename: str,
+    spim,
+    extras,
+    wls,
+    rgb: Optional[Any],
+    metadata: str = "",
+    compression: int = 0,
+    extra_tags=None,
+):
     """
     Write a spectral image cube into a Spectral Tiff. A spectral tiff contains
     two custom tags to describe the data cube:
@@ -197,42 +237,54 @@ def write_stiff(filename: str, spim, wls, rgb: Optional[Any], metadata: str = ''
                         as a preview/thumbnail. This parameter is optional.
     :param metadata:    a free-form metadata string to be saved in the spectral tiff.
     """
-    if wls.dtype != 'float32':
-        warnings.warn(f'Wavelength list dtype {wls.dtype} will be saved as float32. Precision may be lost.')
-        wls = wls.astype('float32')
+    if wls.dtype != "float32":
+        warnings.warn(
+            f"Wavelength list dtype {wls.dtype} will be saved as float32. Precision may be lost."
+        )
+        wls = wls.astype("float32")
     wavelengths = list(wls)
-    metadata_bytes = str(metadata).encode('ascii', 'backslashreplace')
+    metadata_bytes = str(metadata).encode("ascii", "backslashreplace")
     stiff_tags = [
-        (65000, 'f', len(wavelengths), wavelengths, True),
-        (65111, 's', len(metadata_bytes), metadata_bytes, True)
+        (65000, "f", len(wavelengths), wavelengths, True),
+        (65111, "s", len(metadata_bytes), metadata_bytes, True),
     ]
 
     if len(wls) != spim.shape[2]:
-        raise ValueError(f'Wavelength list length {len(wls)} does not match number of bands {spim.shape[2]}')
+        raise ValueError(
+            f"Wavelength list length {len(wls)} does not match number of bands {spim.shape[2]}"
+        )
 
     # RGB image must have three channels and dtype uint8
     if rgb is not None and rgb.ndim != 3:
-        raise TypeError(f'RGB preview image must have three channels! (ndim = {rgb.ndim} != 3)')
+        raise TypeError(
+            f"RGB preview image must have three channels! (ndim = {rgb.ndim} != 3)"
+        )
 
-    if rgb is not None and rgb.dtype != 'uint8':
-        warnings.warn(f'RGB preview image is not a uint8 array (dtype: {rgb.dtype}).')
-        if rgb.dtype == 'float':
-            rgb = (rgb * (2**8-1)).astype('uint8')
+    if rgb is not None and rgb.dtype != "uint8":
+        warnings.warn(f"RGB preview image is not a uint8 array (dtype: {rgb.dtype}).")
+        if rgb.dtype == "float":
+            rgb = (rgb * (2**8 - 1)).astype("uint8")
         else:
-            raise RuntimeError(f'How should {rgb.dtype} be handled here?')
+            raise RuntimeError(f"How should {rgb.dtype} be handled here?")
 
     with TiffWriter(filename) as tiff:
         if rgb is not None:
-            tiff.save(rgb)
+            tiff.save(rgb, compression=compression)
 
         # Save the first page with tags
         spim_page = spim[:, :, 0]
-        tiff.save(spim_page, extratags=stiff_tags)
+        tiff.save(spim_page, extratags=stiff_tags, compression=compression)
 
         # continue saving pages
         for i in range(1, spim.shape[2]):
             spim_page = spim[:, :, i]
-            tiff.save(spim_page)
+            tiff.save(spim_page, compression=compression)
+
+        for key in extras.keys():
+            key_bytes = str(extras[key]).encode("ascii", "backslashreplace")
+            extras_tags = [(65111, "s", len(key_bytes), key)]
+            page = extras[key]
+            tiff.save(page, extratags=extras_tags, compression=compression)
 
 
 def read_mtiff(filename):
@@ -254,13 +306,13 @@ def read_mtiff(filename):
     with TiffFile(filename) as tiff:
         for p in range(0, len(tiff.pages)):
             label_tag = tiff.pages[p].tags.get(TIFFTAG_MASK_LABEL)
-            label = label_tag.value.encode('ascii').decode('unicode-escape')
+            label = label_tag.value.encode("ascii").decode("unicode-escape")
             mask = tiff.asarray(key=p)
             masks[label] = mask > 0
     return masks
 
 
-def write_mtiff(filename, masks):
+def write_mtiff(filename, masks, compression=0):
     """
     Write a mask bitmap tiff.
 
@@ -276,8 +328,11 @@ def write_mtiff(filename, masks):
     """
     with TiffWriter(filename) as tiff:
         for label in masks:
-            label_bytes = str(label).encode('ascii', 'backslashreplace')
-            tiff.save(masks[label] > 0, #.astype('uint8') * 255,
-                      photometric='MINISBLACK',
-                      contiguous=False,
-                      extratags=[(65001, 's', len(label_bytes), label_bytes, True)])
+            label_bytes = str(label).encode("ascii", "backslashreplace")
+            tiff.save(
+                masks[label] > 0,  # .astype('uint8') * 255,
+                photometric="MINISBLACK",
+                contiguous=False,
+                extratags=[(65001, "s", len(label_bytes), label_bytes, True)],
+                compression=compression,
+            )

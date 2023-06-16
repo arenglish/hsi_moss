@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hsi_moss"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
 {name="Austin Ryan English", email="austinenglish4@gmail.com" },
 ]
@@ -13,6 +13,13 @@ readme = "README.md"
 requires-python = ">=3.7"
 dependencies = [
   'tifffile',
+  'imagecodecs',
+  'scikit-learn',
+  'Pillow',
+  'colorbrewer',
+  'matplotlib',
+  'importlib_resources',
+  'pandas'
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
